@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>棒球小遊戲 - Arcade Baseball</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Noto+Sans+TC:wght@500;700;900&display=swap');
+
+    body {
+      font-family: 'Noto Sans TC', sans-serif;
+      touch-action: manipulation;
+      user-select: none;
+    }
+
+    .pixel-font {
+      font-family: 'Press Start 2P', monospace;
+    }
+
+    /* Custom Animations */
+    @keyframes pulse-glow {
+      0%, 100% { filter: drop-shadow(0 0 15px rgba(234, 179, 8, 0.8)); }
+      50% { filter: drop-shadow(0 0 25px rgba(234, 179, 8, 1)); }
+    }
+
+    .homerun-glow {
+      animation: pulse-glow 1s infinite alternate;
+    }
+
+    .stadium-gradient {
+      background: radial-gradient(circle at 50% 100%, #1e3a8a 0%, #0f172a 100%);
+    }
+
+    /* Base diamond LED styles */
+    .base-led {
+      transition: all 0.3s ease;
+    }
+    .base-active {
+      fill: #facc15 !important;
+      filter: drop-shadow(0 0 8px #facc15);
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-white min-h-screen flex flex-col justify-between items-center overflow-x-hidden select-none">
+
+  <!-- Header & Scoreboard -->
+  <header class="w-full max-w-4xl p-3 sm:p-4 z-20">
+    <div class="bg-slate-900/90 border-2 border-slate-700 rounded-xl p-3 shadow-2xl backdrop-blur-md flex flex-wrap justify-between items-center gap-3">
+      
+      <!-- Inning & Score -->
+      <div class="flex items-center space-x-4 bg-slate-800/80 px-4 py-2 rounded-lg border border-slate-700">
+        <div class="text-center">
+          <div class="text-xs text-slate-400 font-bold uppercase tracking-wider">局數 INNING</div>
+          <div class="text-lg font-black text-amber-400" id="inningText">第 1 局 (上半)</div>
+        </div>
+        <div class="h-8 w-px bg-slate-700"></div>
+        <div class="flex space-x-3 text-center">
+          <div>
+            <div class="text-xs text-slate-400 font-bold">客隊 OPP</div>
+            <div class="text-2xl font-black text-rose-400" id="awayScore">0</div>
+          </div>
+          <div class="text-slate-500 font-bold text-xl self-end mb-1">:</div>
+          <div>
+            <div class="text-xs text-slate-400 font-bold">主隊 YOU</div>
+            <div class="text-2xl font-black text-emerald-400" id="homeScore">0</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bases Diamond Indicator -->
+      <div class="flex items-center space-x-2 bg-slate-800/80 px-4 py-2 rounded-lg border border-slate-700">
+        <svg class="w-12 h-12 transform -rotate-45" viewBox="0 0 100 100">
+          <!-- 2nd Base (Top) -->
+          <rect id="base2" x="10" y="10" width="35" height="35" rx="4" class="base-led fill-slate-700 stroke-slate-500" stroke-width="3"/>
+          <!-- 3rd Base (Left) -->
+          <rect id="base3" x="10" y="55" width="35" height="35" rx="4" class="base-led fill-slate-700 stroke-slate-500" stroke-width="3"/>
+          <!-- 1st Base (Right) -->
+          <rect id="base1" x="55" y="10" width="35" height="35" rx="4" class="base-led fill-slate-700 stroke-slate-500" stroke-width="3"/>
+        </svg>
+        <div class="text-xs text-slate-400 font-bold ml-1">
+          壘包狀態
+        </div>
+      </div>
+
+      <!-- BSO Count Lights -->
+      <div class="flex items-center space-x-4 bg-slate-800/80 px-4 py-2 rounded-lg border border-slate-700">
+        <div class="space-y-1">
+          <div class="flex items-center space-x-1.5">
+            <span class="text-xs font-black text-blue-400 w-3">B</span>
+            <div id="ball1" class="w-3 h-3 rounded-full bg-slate-700 border border-slate-600"></div>
+            <div id="ball2" class="w-3 h-3 rounded-full bg-slate-700 border border-slate-600"></div>
+            <div id="ball3" class="w-3 h-3 rounded-full bg-slate-700 border border-slate-600"></div>
+          </div>
+          <div class="flex items-center space-x-1.5">
+            <span class="text-xs font-black text-amber-400 w-3">S</span>
+            <div id="strike1" class="w-3 h-3 rounded-full bg-slate-700 border border-slate-600"></div>
+            <div id="strike2" class="w-3 h-3 rounded-full bg-slate-700 border border-slate-600"></div>
+          </div>
+          <div class="flex items-center space-x-1.5">
+            <span class="text-xs font-black text-rose-500 w-3">O</span>
+            <div id="out1" class="w-3 h-3 rounded-full bg-slate-700 border border-slate-600"></div>
+            <div id="out2" class="w-3 h-3 rounded-full bg-slate-700 border border-slate-600"></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- Game Canvas Container -->
+  <main class="relative w-full max-w-4xl flex-grow flex items-center justify-center p-2">
+    <canvas id="gameCanvas" width="800" height="600" class="w-full h-auto max-h-[70vh] aspect-[4/3] rounded-2xl shadow-2xl border-4 border-slate-700 bg-slate-900 cursor-pointer touch-none"></canvas>
+    
+    <!-- Floating Text Overlay Container (Managed in JS Canvas render) -->
+
+    <!-- Game Start / Game Over Overlay -->
+    <div id="modalOverlay" class="absolute inset-0 bg-black/85 backdrop-blur-md rounded-2xl flex flex-col items-center justify-center p-6 text-center z-30 transition-all">
+      <h1 id="modalTitle" class="text-4xl sm:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-amber-200 to-yellow-500 mb-4 tracking-wider">
+        超熱血棒球大賽
+      </h1>
+      <p id="modalSub" class="text-slate-300 text-sm sm:text-base max-w-md mb-8 leading-relaxed">
+        抓準投手投球Timing！按下<span class="px-2 py-1 bg-amber-500/20 border border-amber-400/40 text-amber-300 rounded font-mono">空白鍵 Space</span> 或點擊畫面進行揮棒打擊！
+      </p>
+      
+      <button id="startBtn" class="px-8 py-4 bg-gradient-to-r from-amber-500 to-yellow-600 hover:from-amber-400 hover:to-yellow-500 text-slate-950 font-black text-xl rounded-full shadow-lg hover:shadow-amber-500/50 transform hover:-translate-y-1 active:translate-y-0 transition-all cursor-pointer">
+        開始比賽 (START)
+      </button>
+    </div>
+  </main>
+
+  <!-- Game Controls Footer -->
+  <footer class="w-full max-w-4xl p-3 sm:p-4 z-20">
+    <div class="bg-slate-900/90 border-2 border-slate-700 rounded-xl p-3 flex justify-between items-center gap-4">
+      
+      <!-- Pitch Info Status -->
+      <div class="flex items-center space-x-3">
+        <div class="px-3 py-1 bg-slate-800 rounded border border-slate-700">
+          <span class="text-xs text-slate-400 block">當前球種</span>
+          <span id="pitchTypeDisplay" class="font-bold text-amber-400 text-sm">準備投球...</span>
+        </div>
+        <div class="px-3 py-1 bg-slate-800 rounded border border-slate-700">
+          <span class="text-xs text-slate-400 block">球速</span>
+          <span id="pitchSpeedDisplay" class="font-bold text-cyan-400 text-sm">-- km/h</span>
+        </div>
+      </div>
+
+      <!-- Action Button for Touch Devices -->
+      <button id="swingBtn" class="flex-grow sm:flex-grow-0 px-8 py-3 bg-red-600 hover:bg-red-500 active:bg-red-700 text-white font-black text-lg rounded-xl shadow-lg border-2 border-red-400 transition-all active:scale-95">
+        揮棒! (SWING)
+      </button>
+
+    </div>
+  </footer>
+
+  <script>
+    // Audio Synthesizer Engine (Web Audio API)
+    class SoundFX {
+      constructor() {
+        this.ctx = null;
+      }
+
+      init() {
+        if (!this.ctx) {
+          this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+      }
+
+      playSwing() {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(400, this.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(80, this.ctx.currentTime + 0.15);
+        gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.15);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.15);
+      }
+
+      playHit(isHomeRun = false) {
+        if (!this.ctx) return;
+        // Wooden Bat Crack Sound
+        const bufferSize = this.ctx.sampleRate * 0.1;
+        const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+        const output = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+          output[i] = Math.random() * 2 - 1;
+        }
+
+        const whiteNoise = this.ctx.createBufferSource();
+        whiteNoise.buffer = buffer;
+
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'bandpass';
+        filter.frequency.value = isHomeRun ? 1200 : 800;
+
+        const gain = this.ctx.createGain();
+        gain.gain.setValueAtTime(1.0, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.2);
+
+        whiteNoise.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        whiteNoise.start();
+        whiteNoise.stop(this.ctx.currentTime + 0.2);
+
+        if (isHomeRun) {
+          setTimeout(() => this.playCheer(), 150);
+        }
+      }
+
+      playCatch() {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(150, this.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(40, this.ctx.currentTime + 0.08);
+        gain.gain.setValueAtTime(0.5, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.08);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.08);
+      }
+
+      playCheer() {
+        if (!this.ctx) return;
+        // Fanfare / Cheer Simulation
+        const freqs = [523.25, 659.25, 783.99, 1046.50];
+        freqs.forEach((f, index) => {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'square';
+          osc.frequency.value = f;
+          gain.gain.setValueAtTime(0.08, this.ctx.currentTime + index * 0.1);
+          gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + index * 0.1 + 0.4);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(this.ctx.currentTime + index * 0.1);
+          osc.stop(this.ctx.currentTime + index * 0.1 + 0.4);
+        });
+      }
+    }
+
+    const sound = new SoundFX();
+
+    // Canvas & Setup
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // UI Elements
+    const ballLights = [document.getElementById('ball1'), document.getElementById('ball2'), document.getElementById('ball3')];
+    const strikeLights = [document.getElementById('strike1'), document.getElementById('strike2')];
+    const outLights = [document.getElementById('out1'), document.getElementById('out2')];
+    const base1 = document.getElementById('base1');
+    const base2 = document.getElementById('base2');
+    const base3 = document.getElementById('base3');
+    const inningText = document.getElementById('inningText');
+    const homeScoreEl = document.getElementById('homeScore');
+    const awayScoreEl = document.getElementById('awayScore');
+    const pitchTypeDisplay = document.getElementById('pitchTypeDisplay');
+    const pitchSpeedDisplay = document.getElementById('pitchSpeedDisplay');
+    const modalOverlay = document.getElementById('modalOverlay');
+    const modalTitle = document.getElementById('modalTitle');
+    const modalSub = document.getElementById('modalSub');
+    const startBtn = document.getElementById('startBtn');
+    const swingBtn = document.getElementById('swingBtn');
+
+    // Pitch Types Definition
+    const PITCH_TYPES = [
+      { name: '直球 (Fastball)', speedRange: [145, 158], curveX: 0, color: '#f87171' },
+      { name: '曲球 (Curveball)', speedRange: [115, 128], curveX: -1.2, color: '#60a5fa' },
+      { name: '滑球 (Slider)', speedRange: [128, 138], curveX: 1.5, color: '#a78bfa' },
+      { name: '變速球 (Changeup)', speedRange: [120, 132], curveX: 0.3, color: '#34d399' }
+    ];
+
+    // Game State
+    let gameState = 'START'; // 'START', 'PITCHING', 'SWINGING', 'HIT_IN_PLAY', 'ROUND_OVER', 'GAME_OVER'
+    let currentInning = 1;
+    let isTopInning = false; // Player always bats in Bottom Inning (or single player Mode)
+    let homeScore = 0;
+    let awayScore = 0;
+    let balls = 0;
+    let strikes = 0;
+    let outs = 0;
+    let bases = [false, false, false]; // [1st, 2nd, 3rd]
+
+    // Pitch & Bat Variables
+    let currentPitch = null;
+    let ballPos = { x: 400, y: 180, z: 0, r: 8 };
+    let ballVelocity = { x: 0, y: 0, z: 0 };
+    let pitcherAnimTimer = 0;
+    let batterSwingState = { isSwinging: false, progress: 0, hitSuccess: false };
+    
+    // Plate & Strike Zone Coordinates
+    const PITCHER_POS = { x: 400, y: 180 };
+    const PLATE_POS = { x: 400, y: 490 };
+    const STRIKE_ZONE = { x: 360, y: 440, w: 80, h: 90 };
+
+    // Floating Announcement Texts
+    let floatingTexts = [];
+    let particles = [];
+
+    // Initialize Game
+    function init() {
+      resetCount();
+      resetBases();
+      homeScore = 0;
+      awayScore = 0;
+      currentInning = 1;
+      updateUI();
+    }
+
+    function resetCount() {
+      balls = 0;
+      strikes = 0;
+      updateUI();
+    }
+
+    function resetBases() {
+      bases = [false, false, false];
+      updateUI();
+    }
+
+    function updateUI() {
+      // BSO Lights
+      ballLights.forEach((el, idx) => el.style.backgroundColor = idx < balls ? '#60a5fa' : '#334155');
+      strikeLights.forEach((el, idx) => el.style.backgroundColor = idx < strikes ? '#facc15' : '#334155');
+      outLights.forEach((el, idx) => el.style.backgroundColor = idx < outs ? '#f87171' : '#334155');
+
+      // Bases
+      base1.classList.toggle('base-active', bases[0]);
+      base2.classList.toggle('base-active', bases[1]);
+      base3.classList.toggle('base-active', bases[2]);
+
+      // Scores & Inning
+      homeScoreEl.textContent = homeScore;
+      awayScoreEl.textContent = awayScore;
+      inningText.textContent = `第 ${currentInning} 局 (下半)`;
+    }
+
+    function showFloatingText(text, color = '#facc15', duration = 60) {
+      floatingTexts.push({
+        text,
+        color,
+        x: 400,
+        y: 350,
+        alpha: 1.0,
+        life: duration,
+        maxLife: duration
+      });
+    }
+
+    function spawnConfetti() {
+      for (let i = 0; i < 60; i++) {
+        particles.push({
+          x: 400,
+          y: 300,
+          vx: (Math.random() - 0.5) * 12,
+          vy: (Math.random() - 0.8) * 10,
+          size: Math.random() * 6 + 4,
+          color: ['#facc15', '#f87171', '#60a5fa', '#34d399', '#f472b6'][Math.floor(Math.random() * 5)],
+          life: 80
+        });
+      }
+    }
+
+    // Pitch Generator
+    function startNextPitch() {
+      if (gameState === 'GAME_OVER') return;
+
+      gameState = 'PRE_PITCH';
+      pitchTypeDisplay.textContent = '投手準備中...';
+      pitchSpeedDisplay.textContent = '-- km/h';
+
+      setTimeout(() => {
+        const typeIndex = Math.floor(Math.random() * PITCH_TYPES.length);
+        const pitchType = PITCH_TYPES[typeIndex];
+        const speed = Math.floor(Math.random() * (pitchType.speedRange[1] - pitchType.speedRange[0])) + pitchType.speedRange[0];
+        
+        currentPitch = {
+          type: pitchType,
+          speed: speed,
+          timeToPlate: 60 - (speed - 110) * 0.4, // frames to arrive
+          frame: 0
+        };
+
+        ballPos = { x: PITCHER_POS.x, y: PITCHER_POS.y, z: 0, r: 5 };
+        pitcherAnimTimer = 20; // windup frames
+
+        pitchTypeDisplay.textContent = pitchType.name;
+        pitchTypeDisplay.style.color = pitchType.color;
+        pitchSpeedDisplay.textContent = `${speed} km/h`;
+
+        gameState = 'PITCHING';
+      }, 1000);
+    }
+
+    // Swing Trigger
+    function handleSwing() {
+      sound.init();
+      if (gameState !== 'PITCHING' || batterSwingState.isSwinging) return;
+
+      sound.playSwing();
+      batterSwingState.isSwinging = true;
+      batterSwingState.progress = 0;
+
+      // Contact Timing Check
+      const targetY = PLATE_POS.y - 15;
+      const distanceY = Math.abs(ballPos.y - targetY);
+      
+      // Swing Hit Window Check
+      if (distanceY < 45) {
+        // Successful Contact!
+        evaluateHit(distanceY);
+      }
+    }
+
+    // Hit Physics & Result Logic
+    function evaluateHit(timingDelta) {
+      gameState = 'HIT_IN_PLAY';
+      batterSwingState.hitSuccess = true;
+
+      let hitResult = '';
+      let ballVx = 0;
+      let ballVy = 0;
+
+      // Quality of timing (Perfect, Early, Late)
+      const isPerfect = timingDelta < 12;
+      const isGood = timingDelta < 28;
+
+      const randomFactor = Math.random();
+
+      if (isPerfect) {
+        if (randomFactor > 0.3) {
+          hitResult = '全壘打 HOMERUN!';
+          sound.playHit(true);
+          spawnConfetti();
+          ballVx = (Math.random() - 0.5) * 8;
+          ballVy = -16;
+          advanceRunners(4);
+        } else {
+          hitResult = '三壘安打 TRIPLE!';
+          sound.playHit(false);
+          ballVx = (Math.random() > 0.5 ? 1 : -1) * 10;
+          ballVy = -12;
+          advanceRunners(3);
+        }
+      } else if (isGood) {
+        if (randomFactor > 0.5) {
+          hitResult = '二壘安打 DOUBLE!';
+          sound.playHit(false);
+          ballVx = (Math.random() - 0.5) * 12;
+          ballVy = -10;
+          advanceRunners(2);
+        } else {
+          hitResult = '一壘安打 SINGLE!';
+          sound.playHit(false);
+          ballVx = (Math.random() - 0.5) * 14;
+          ballVy = -7;
+          advanceRunners(1);
+        }
+      } else {
+        // Weak Contact / Foul / Fly Out
+        if (randomFactor > 0.6) {
+          hitResult = '界外球 FOUL';
+          sound.playHit(false);
+          ballVx = (Math.random() > 0.5 ? 1 : -1) * 15;
+          ballVy = -4;
+          if (strikes < 2) strikes++;
+          updateUI();
+        } else {
+          hitResult = '飛球接殺 FLY OUT';
+          sound.playCatch();
+          ballVx = (Math.random() - 0.5) * 6;
+          ballVy = -11;
+          recordOut();
+        }
+      }
+
+      showFloatingText(hitResult, isPerfect ? '#facc15' : '#38bdf8');
+      ballVelocity = { x: ballVx, y: ballVy, z: 8 };
+
+      setTimeout(() => {
+        if (gameState !== 'GAME_OVER') {
+          startNextPitch();
+        }
+      }, 2500);
+    }
+
+    // Runner & Base Advance Logic
+    function advanceRunners(numBases) {
+      let runsScored = 0;
+
+      for (let i = 0; i < numBases; i++) {
+        // Shift runners forward
+        if (bases[2]) { runsScored++; bases[2] = false; }
+        if (bases[1]) { bases[2] = true; bases[1] = false; }
+        if (bases[0]) { bases[1] = true; bases[0] = false; }
+        
+        if (i === 0) {
+          if (numBases === 4) runsScored++; // Batter home run
+          else bases[numBases - 1] = true;  // Batter to base
+        }
+      }
+
+      if (runsScored > 0) {
+        homeScore += runsScored;
+        showFloatingText(`+${runsScored} 得分 RUN!`, '#4ade80', 80);
+      }
+
+      resetCount();
+      updateUI();
+    }
+
+    function recordOut() {
+      outs++;
+      resetCount();
+      if (outs >= 3) {
+        nextInning();
+      }
+      updateUI();
+    }
+
+    function recordStrike() {
+      strikes++;
+      if (strikes >= 3) {
+        showFloatingText('三振出局 STRIKE OUT!', '#f87171');
+        sound.playCatch();
+        recordOut();
+      } else {
+        showFloatingText('好球 STRIKE!', '#facc15');
+        sound.playCatch();
+      }
+      updateUI();
+      setTimeout(startNextPitch, 1500);
+    }
+
+    function recordBall() {
+      balls++;
+      if (balls >= 4) {
+        showFloatingText('保送上壘 WALK!', '#60a5fa');
+        advanceRunners(1);
+      } else {
+        showFloatingText('壞球 BALL!', '#60a5fa');
+      }
+      updateUI();
+      setTimeout(startNextPitch, 1500);
+    }
+
+    function nextInning() {
+      outs = 0;
+      resetCount();
+      resetBases();
+
+      if (currentInning >= 3) {
+        endGame();
+      } else {
+        currentInning++;
+        showFloatingText(`第 ${currentInning} 局開始!`, '#fbbf24', 90);
+      }
+      updateUI();
+    }
+
+    function endGame() {
+      gameState = 'GAME_OVER';
+      modalTitle.textContent = '比賽結束 GAME OVER';
+      modalSub.innerHTML = `最終比數<br><span class="text-3xl font-black text-amber-400">主隊 ${homeScore} : ${awayScore} 客隊</span><br>${homeScore > awayScore ? '🎉 恭喜獲勝！' : '殘念！再接再厲！'}`;
+      startBtn.textContent = '重新開始 (REPLAY)';
+      modalOverlay.classList.remove('hidden');
+    }
+
+    // Main Update Loop
+    function update() {
+      // Pitching Animation
+      if (gameState === 'PITCHING' && currentPitch) {
+        currentPitch.frame++;
+        const progress = currentPitch.frame / currentPitch.timeToPlate;
+
+        // Curve trajectory calculations
+        const curveOffset = Math.sin(progress * Math.PI) * currentPitch.type.curveX * 40;
+        ballPos.x = PITCHER_POS.x + curveOffset;
+        ballPos.y = PITCHER_POS.y + (PLATE_POS.y - PITCHER_POS.y) * progress;
+        ballPos.r = 5 + progress * 8; // Perspective sizing
+
+        // Check if passed plate without swing
+        if (progress >= 1.05 && !batterSwingState.hitSuccess) {
+          gameState = 'BALL_PASSED';
+          // Check inside strike zone box
+          const inZone = ballPos.x >= STRIKE_ZONE.x && ballPos.x <= STRIKE_ZONE.x + STRIKE_ZONE.w &&
+                         ballPos.y >= STRIKE_ZONE.y && ballPos.y <= STRIKE_ZONE.y + STRIKE_ZONE.h;
+          
+          if (inZone) {
+            recordStrike();
+          } else {
+            recordBall();
+          }
+        }
+      }
+
+      // Ball Trajectory after Hit
+      if (gameState === 'HIT_IN_PLAY') {
+        ballPos.x += ballVelocity.x;
+        ballPos.y += ballVelocity.y;
+        ballPos.r = Math.max(3, ballPos.r + ballVelocity.z * 0.1);
+        ballVelocity.z -= 0.2; // Gravity effect on size
+      }
+
+      // Batter Swing Arc Animation
+      if (batterSwingState.isSwinging) {
+        batterSwingState.progress += 0.15;
+        if (batterSwingState.progress >= 1) {
+          batterSwingState.isSwinging = false;
+          batterSwingState.progress = 0;
+          
+          // Swing and Miss
+          if (gameState === 'PITCHING') {
+            gameState = 'SWING_MISS';
+            recordStrike();
+          }
+        }
+      }
+
+      // Floating Texts decay
+      floatingTexts.forEach((item, index) => {
+        item.y -= 0.8;
+        item.life--;
+        item.alpha = item.life / item.maxLife;
+        if (item.life <= 0) floatingTexts.splice(index, 1);
+      });
+
+      // Particles decay
+      particles.forEach((p, index) => {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += 0.3;
+        p.life--;
+        if (p.life <= 0) particles.splice(index, 1);
+      });
+    }
+
+    // Drawing Render Engine
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // 1. Draw Field Background
+      // Outfield Grass
+      const grassGradient = ctx.createLinearGradient(0, 0, 0, 600);
+      grassGradient.addColorStop(0, '#15803d');
+      grassGradient.addColorStop(1, '#166534');
+      ctx.fillStyle = grassGradient;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Outfield Fence Arc
+      ctx.beginPath();
+      ctx.arc(400, 520, 480, Math.PI * 1.2, Math.PI * 1.8);
+      ctx.strokeStyle = '#fef08a';
+      ctx.lineWidth = 6;
+      ctx.stroke();
+
+      // Dirt Infield Diamond Path
+      ctx.beginPath();
+      ctx.moveTo(400, 500); // Home Plate
+      ctx.lineTo(580, 360); // 1st Base
+      ctx.lineTo(400, 240); // 2nd Base
+      ctx.lineTo(220, 360); // 3rd Base
+      ctx.closePath();
+      ctx.fillStyle = '#b45309';
+      ctx.fill();
+      ctx.strokeStyle = '#f8fafc';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      // Pitcher's Mound
+      ctx.beginPath();
+      ctx.arc(PITCHER_POS.x, PITCHER_POS.y + 10, 35, 0, Math.PI * 2);
+      ctx.fillStyle = '#92400e';
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(385, PITCHER_POS.y + 5, 30, 6);
+
+      // Home Plate
+      ctx.beginPath();
+      ctx.moveTo(390, 485);
+      ctx.lineTo(410, 485);
+      ctx.lineTo(410, 498);
+      ctx.lineTo(400, 508);
+      ctx.lineTo(390, 498);
+      ctx.closePath();
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+
+      // Strike Zone Overlay Frame
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 4]);
+      ctx.strokeRect(STRIKE_ZONE.x, STRIKE_ZONE.y, STRIKE_ZONE.w, STRIKE_ZONE.h);
+      ctx.setLineDash([]);
+
+      // 2. Draw Pitcher
+      ctx.fillStyle = '#38bdf8';
+      ctx.beginPath();
+      ctx.arc(PITCHER_POS.x, PITCHER_POS.y - 15, 12, 0, Math.PI * 2); // Head
+      ctx.fill();
+      ctx.fillStyle = '#1e40af';
+      ctx.fillRect(PITCHER_POS.x - 10, PITCHER_POS.y - 3, 20, 22); // Body
+
+      // 3. Draw Batter & Bat Swing
+      const batterX = 340;
+      const batterY = 480;
+
+      // Batter Body
+      ctx.fillStyle = '#facc15';
+      ctx.beginPath();
+      ctx.arc(batterX, batterY - 25, 13, 0, Math.PI * 2); // Head
+      ctx.fill();
+      ctx.fillStyle = '#b45309';
+      ctx.fillRect(batterX - 8, batterY - 12, 16, 26); // Body
+
+      // Bat Graphics (Rotating during swing)
+      ctx.save();
+      ctx.translate(batterX + 10, batterY - 5);
+      let batAngle = -Math.PI / 4;
+      if (batterSwingState.isSwinging) {
+        batAngle += batterSwingState.progress * Math.PI * 1.2;
+      }
+      ctx.rotate(batAngle);
+      ctx.fillStyle = '#d97706';
+      ctx.fillRect(0, -4, 45, 8); // Wooden Bat
+      ctx.restore();
+
+      // 4. Draw Ball
+      if (gameState === 'PITCHING' || gameState === 'HIT_IN_PLAY') {
+        // Shadow
+        ctx.beginPath();
+        ctx.arc(ballPos.x, ballPos.y + 10, Math.max(2, ballPos.r * 0.7), 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(0,0,0,0.25)';
+        ctx.fill();
+
+        // White Ball
+        ctx.beginPath();
+        ctx.arc(ballPos.x, ballPos.y, Math.max(2, ballPos.r), 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+
+      // 5. Draw Particles / Celebration Confetti
+      particles.forEach(p => {
+        ctx.fillStyle = p.color;
+        ctx.fillRect(p.x, p.y, p.size, p.size);
+      });
+
+      // 6. Draw Floating Notification Texts
+      floatingTexts.forEach(item => {
+        ctx.save();
+        ctx.globalAlpha = item.alpha;
+        ctx.font = '900 28px "Noto Sans TC", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = item.color;
+        ctx.shadowColor = 'black';
+        ctx.shadowBlur = 8;
+        ctx.fillText(item.text, item.x, item.y);
+        ctx.restore();
+      });
+    }
+
+    // Main Game Loop
+    function gameLoop() {
+      update();
+      draw();
+      requestAnimationFrame(gameLoop);
+    }
+
+    // Event Listeners
+    startBtn.addEventListener('click', () => {
+      sound.init();
+      modalOverlay.classList.add('hidden');
+      init();
+      startNextPitch();
+    });
+
+    swingBtn.addEventListener('click', handleSwing);
+    canvas.addEventListener('click', handleSwing);
+
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Space') {
+        e.preventDefault();
+        handleSwing();
+      }
+    });
+
+    // Run Game
+    gameLoop();
+  </script>
+</body>
+</html>
